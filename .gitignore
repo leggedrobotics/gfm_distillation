@@ -1,0 +1,8 @@
+output/*
+wandb/*
+lightning_logs/*
+__pycache__/
+*.pyc
+*.pkl
+*.pt
+*.pth
