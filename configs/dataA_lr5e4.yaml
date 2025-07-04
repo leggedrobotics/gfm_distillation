@@ -1,0 +1,32 @@
+exp_name: Distill_regnet_lr5e-4_data_A
+output_path: /capstor/store/cscs/swissai/a03/patelm/output_distillation
+num_gpus: 4
+batch_size: 1024
+max_steps: 100000
+num_workers: 8
+limit_train_batches: 2000
+limit_val_batches: 100
+learning_rate: 5e-4
+
+noise:
+  add_noise: true
+  min_depth: 0.25
+  max_depth: 10.0
+  teacher:
+    focal_length: 120.0
+    baseline: 0.12
+  student:
+    focal_length: 25.0
+    baseline: 0.12
+
+wandb:
+  project: distillation
+  entity: geometric-foundational-model
+
+teacher:
+  config_path: /capstor/store/cscs/swissai/a03/patelm/output_result/vitl14_depth_aug_96GPU_data_a_webd/config
+  ckpt_path: /capstor/store/cscs/swissai/a03/patelm/output_result/vitl14_depth_aug_96GPU_data_a_webd/eval/training_462499/teacher_checkpoint.pth
+
+dataset:
+  path: /iopsstor/scratch/cscs/patelm/datasets_gfm/
+  val_path: /iopsstor/scratch/cscs/patelm/datasets_gfm/

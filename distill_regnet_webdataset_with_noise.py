@@ -273,6 +273,7 @@ if __name__ == "__main__":
     NUM_WORKERS = cfg.num_workers
     WANDB_PROJECT = cfg.wandb.project
     WANDB_ENTITY = cfg.wandb.entity
+    LEARNING_RATE = cfg.learning_rate
 
     model_conf = cfg.teacher.config_path
     ckpt_path = cfg.teacher.ckpt_path
@@ -334,6 +335,7 @@ if __name__ == "__main__":
         student_baseline=student_baseline,
         min_depth=min_depth,
         max_depth=max_depth,
+        lr=LEARNING_RATE,
     )
 
     trainer = pl.Trainer(

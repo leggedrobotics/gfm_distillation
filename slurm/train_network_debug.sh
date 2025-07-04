@@ -1,7 +1,8 @@
 #!/bin/bash -l
 
 #SBATCH --job-name=distill_regnet
-#SBATCH --time=12:00:00
+#SBATCH --partition=debug
+#SBATCH --time=01:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=70
@@ -20,6 +21,5 @@ cd /users/patelm/ws/rsl/gfm_distillation
 
 echo $PWD
 echo "Running distillation script with noise on RegNet"
-echo "Using config file: $1"
 
-srun python distill_regnet_webdataset_with_noise.py --config $1
+srun python distill_regnet_webdataset_with_noise.py
