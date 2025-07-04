@@ -1,4 +1,4 @@
-exp_name: Distill_regnet_lr1e-4_data_A
+exp_name: Distill_regnet_lr1e-4_data_A_mse
 output_path: /capstor/store/cscs/swissai/a03/patelm/output_distillation
 num_gpus: 4
 batch_size: 1024

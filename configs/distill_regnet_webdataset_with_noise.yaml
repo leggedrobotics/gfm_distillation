@@ -29,4 +29,6 @@ teacher:
 
 dataset:
   path: /home/patelm/Downloads/gfm_datasets/omnidata
-  val_path: /home/patelm/Downloads/gfm_datasets/omnidata 
+  val_path: /home/patelm/Downloads/gfm_datasets/omnidata
+
+loss_type: cosine  # Options: 'mse' or 'cosine' 

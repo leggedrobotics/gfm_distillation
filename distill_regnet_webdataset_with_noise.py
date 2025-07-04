@@ -137,11 +137,10 @@ class DistillDatasetTransform(object):
 
 class DistillModule(pl.LightningModule):
     def __init__(self, teacher: DinoTeacher, student: RegNetStudent, lr=1e-4, max_steps=100000,
-     add_noise=True, teacher_focal_length=120.0, teacher_baseline=0.12, student_focal_length=25.0, student_baseline=0.12, min_depth=0.25, max_depth=10.0):
+     add_noise=True, teacher_focal_length=120.0, teacher_baseline=0.12, student_focal_length=25.0, student_baseline=0.12, min_depth=0.25, max_depth=10.0, loss_type='mse'):
         super().__init__()
         self.teacher = teacher
         self.student = student
-        self.loss_fn = nn.MSELoss()
         self.lr = lr
         self.max_steps = max_steps  # Set this to the number of training steps you want
         self.add_noise = add_noise
@@ -158,6 +157,14 @@ class DistillModule(pl.LightningModule):
             max_depth=max_depth,
         )
         self.max_depth = max_depth
+        self.loss_type = loss_type
+        # Set loss function
+        if self.loss_type == 'mse':
+            self.loss_fn = None
+        elif self.loss_type == 'cosine':
+            self.loss_fn = None  # will use F.cosine_similarity in step
+        else:
+            raise ValueError(f"Unknown loss_type: {self.loss_type}")
 
     def training_step(self, batch, batch_idx):
         depth, _ = batch
@@ -172,23 +179,23 @@ class DistillModule(pl.LightningModule):
         # After noise and before repeat_interleave
         depth_teacher = (depth_teacher - self.depth_noise.min_depth) / (self.depth_noise.max_depth - self.depth_noise.min_depth)
         depth_teacher = depth_teacher.clamp(0, 1)
-        
-
-        # Plot only for the first batch
-        # if batch_idx == 0:
-        # plot_depth_batch(depth_teacher, depth_student, n=4)
-
 
         with torch.no_grad():
             target_feat = self.teacher(depth_teacher)
 
         pred_feat = self.student(depth_student)
 
-        loss = self.loss_fn(pred_feat, target_feat)
-        # Cosine similarity metric
+        # Compute metrics once
+        mse = F.mse_loss(pred_feat, target_feat)
         cosine_sim = F.cosine_similarity(pred_feat, target_feat, dim=1).mean()
+        if self.loss_type == 'mse':
+            loss = mse
+        elif self.loss_type == 'cosine':
+            loss = 1 - cosine_sim
+
         self.log("train/loss", loss, prog_bar=True, on_step=True, on_epoch=True, sync_dist=True)
         self.log("train/cosine_sim", cosine_sim, prog_bar=True, on_step=True, on_epoch=True, sync_dist=True)
+        self.log("train/mse", mse, on_step=True, on_epoch=True, sync_dist=True)
         self.log("lr", self.trainer.optimizers[0].param_groups[0]["lr"], on_step=True)
         return loss
 
@@ -201,22 +208,24 @@ class DistillModule(pl.LightningModule):
             depth_teacher = self.depth_noise(depth_teacher[:,:1,:,:], add_noise=True)
             depth_student = self.student_noise(depth[1] * self.max_depth, add_noise=True)
 
-
         # Center crop 64x64 for the student depth
         depth_teacher = torch.repeat_interleave(depth_teacher, 3, dim=1)
-
-        # Plot only for the first batch
-        # if batch_idx == 0:
-        # plot_depth_batch(depth_teacher, depth_student, n=2)
 
         with torch.no_grad():
             target_feat = self.teacher(depth_teacher)
             pred_feat = self.student(depth_student)
 
-        loss = self.loss_fn(pred_feat, target_feat)
+        # Compute metrics once
+        mse = F.mse_loss(pred_feat, target_feat)
         cosine_sim = F.cosine_similarity(pred_feat, target_feat, dim=1).mean()
+        if self.loss_type == 'mse':
+            loss = mse
+        elif self.loss_type == 'cosine':
+            loss = 1 - cosine_sim
+
         self.log("val/loss", loss, prog_bar=True, sync_dist=True, on_step=True, on_epoch=True)
         self.log("val/cosine_sim", cosine_sim, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val/mse", mse, on_step=True, on_epoch=True, sync_dist=True)
 
         return loss
 
@@ -292,6 +301,8 @@ if __name__ == "__main__":
     student_focal_length = cfg.noise.student.focal_length
     student_baseline = cfg.noise.student.baseline
 
+    # Loss type
+    loss_type = getattr(cfg, 'loss_type', 'mse')
 
     # add date and time to the output directory
     now = datetime.now()
@@ -337,6 +348,7 @@ if __name__ == "__main__":
         min_depth=min_depth,
         max_depth=max_depth,
         lr=LEARNING_RATE,
+        loss_type=loss_type,
     )
 
     trainer = pl.Trainer(
