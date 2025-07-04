@@ -167,7 +167,6 @@ class DistillModule(pl.LightningModule):
             depth_teacher = self.depth_noise(depth_teacher[:,:1,:,:], add_noise=True)
             depth_student = self.student_noise(depth[1] * self.max_depth, add_noise=False)
 
-
         # Center crop 64x64 for the student depth
         depth_teacher = torch.repeat_interleave(depth_teacher, 3, dim=1)
         # After noise and before repeat_interleave
@@ -186,10 +185,13 @@ class DistillModule(pl.LightningModule):
         pred_feat = self.student(depth_student)
 
         loss = self.loss_fn(pred_feat, target_feat)
-        self.log("train_loss", loss, prog_bar=True, on_step=True, on_epoch=True, sync_dist=True)
+        # Cosine similarity metric
+        cosine_sim = F.cosine_similarity(pred_feat, target_feat, dim=1).mean()
+        self.log("train/loss", loss, prog_bar=True, on_step=True, on_epoch=True, sync_dist=True)
+        self.log("train/cosine_sim", cosine_sim, prog_bar=True, on_step=True, on_epoch=True, sync_dist=True)
         self.log("lr", self.trainer.optimizers[0].param_groups[0]["lr"], on_step=True)
         return loss
-        # return 0
+
 
     def validation_step(self, batch, batch_idx):
         depth, _ = batch
@@ -207,14 +209,15 @@ class DistillModule(pl.LightningModule):
         # if batch_idx == 0:
         # plot_depth_batch(depth_teacher, depth_student, n=2)
 
-
         with torch.no_grad():
             target_feat = self.teacher(depth_teacher)
             pred_feat = self.student(depth_student)
 
         loss = self.loss_fn(pred_feat, target_feat)
+        cosine_sim = F.cosine_similarity(pred_feat, target_feat, dim=1).mean()
+        self.log("val/loss", loss, prog_bar=True, sync_dist=True, on_step=True, on_epoch=True)
+        self.log("val/cosine_sim", cosine_sim, prog_bar=True, on_step=False, on_epoch=True, sync_dist=True)
 
-        self.log("val_loss", loss, prog_bar=True, sync_dist=True, on_step=True, on_epoch=True)
         return loss
 
     def configure_optimizers(self):
@@ -305,10 +308,8 @@ if __name__ == "__main__":
 
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_dir,
-        filename="step_{step}",
-        every_n_train_steps=5000,
-        save_top_k=2,
-        monitor="train_loss",
+        save_top_k=3,
+        monitor="train/loss",
         mode="min",
         save_last=True,
         save_on_train_epoch_end=True,
