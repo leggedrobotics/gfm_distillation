@@ -1,0 +1,31 @@
+exp_name: Distill_regnet_debug
+output_path: /home/patelm/gfm/submodules/rl_nav/output
+num_gpus: 1
+batch_size: 1024
+max_steps: 100000
+num_workers: 4
+limit_train_batches: 1000
+limit_val_batches: 100
+
+noise:
+  add_noise: true
+  min_depth: 0.25
+  max_depth: 10.0
+  teacher:
+    focal_length: 120.0
+    baseline: 0.12
+  student:
+    focal_length: 25.0
+    baseline: 0.12
+
+wandb:
+  project: distillation
+  entity: geometric-foundational-model
+
+teacher:
+  config_path: /home/patelm/vitl14_depth_aug_96GPU_imagenet22k/config
+  ckpt_path: /home/patelm/vitl14_depth_aug_96GPU_imagenet22k/training_262499/teacher_checkpoint.pth
+
+dataset:
+  path: /home/patelm/Downloads/gfm_datasets/omnidata
+  val_path: /home/patelm/Downloads/gfm_datasets/omnidata 

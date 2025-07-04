@@ -7,7 +7,7 @@ class DepthNoise(torch.nn.Module):
         baseline,
         min_depth=0.1,
         max_depth=10.0,
-        filter_size=5,
+        filter_size=3,
         inlier_thred_range=(0.01, 0.05), 
         prob_range=(0.5, 0.8),
         invalid_disp=1e7
@@ -103,6 +103,7 @@ class DepthNoise(torch.nn.Module):
 
     def forward(self, depth, add_noise: bool) -> torch.Tensor:
         # correct input shape
+
         if len(depth.shape) == 3:
             depth = depth.unsqueeze(1) # add channel dimension
         

@@ -1,0 +1,12 @@
+exp_name: distill_regnet_hm3d
+output_path: /home/patelm/gfm/submodules/rl_nav/output
+num_gpus: 4
+batch_size: 1024
+max_steps: 100000
+
+teacher:
+  config_path: /home/patelm/vitl14_depth_aug_96GPU_imagenet22k/config
+  ckpt_path: /home/patelm/vitl14_depth_aug_96GPU_imagenet22k/training_262499/teacher_checkpoint.pth
+
+dataset:
+  path: /media/patelm/ssd/imagenet-1k-dav2/ 
