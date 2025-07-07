@@ -24,6 +24,7 @@ from functools import partial
 from utils.depth_noise import DepthNoise
 import matplotlib.pyplot as plt
 from omegaconf import OmegaConf
+from torchvision.ops import Conv2dNormActivation
 
 class DinoTeacher(nn.Module):
     def __init__(self, config_path, ckpt_path):
@@ -84,8 +85,29 @@ class DinoTeacher(nn.Module):
             feats = F.avg_pool2d(feats, kernel_size=2, stride=2)  # (B, 1024, 8, 8)
         return feats
 
+class VAESampler(nn.Module):
+    def __init__(self, input_dim, latent_dim, out_dim=1024):
+        super(VAESampler, self).__init__()
+        self.input_dim = input_dim
+        self.latent_dim = latent_dim
+        self.conv = Conv2dNormActivation(input_dim, latent_dim, kernel_size=3, stride=1, padding=1, bias=False)
+        
+        # Convolutional Layers for 2D mean and logvar
+        self.mean_layers = nn.Sequential(
+            Conv2dNormActivation(latent_dim, latent_dim, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.Conv2d(latent_dim, latent_dim, kernel_size=1, stride=1, padding=0)
+        )
+        
+        self.proj = nn.Conv2d(latent_dim, out_dim, kernel_size=1)
+    
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.mean_layers(x)
+        self.proj(x)
+        return x
+
 class RegNetStudent(nn.Module):
-    def __init__(self, in_channel=1, out_channel=256, out_dim=1024):
+    def __init__(self, in_channel=1, out_channel=64, out_dim=1024):
         super().__init__()
         encoder = regnet_x_400mf(weights=None)
         # Remove classification head from the encoder
@@ -100,8 +122,6 @@ class RegNetStudent(nn.Module):
         # Feature Pyramid Network
         self.fpn = FeaturePyramidNetwork([64, 160, 400], out_channel)
 
-        self.proj = nn.Conv2d(out_channel, out_dim, kernel_size=1)
-
     def forward(self, x):
         # check if depth has channel dimension
         if x.dim() == 3:
@@ -115,13 +135,17 @@ class RegNetStudent(nn.Module):
         
         out = self.fpn(out)
         
-        return self.proj(out['feat1'])
+        return out['feat1']
 
 class DistillDatasetTransform(object):
     def __init__(self):
         
         self.transform = T.Compose([
             T.RandomResizedCrop((224, 224), scale=(0.8, 1.0)),
+            T.RandomHorizontalFlip(),
+            T.RandomRotation(degrees=10),
+            T.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.95, 1.05), shear=5),
+            T.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
             T.ToTensor(),
         ])
         self.normalize = T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2])
@@ -141,6 +165,7 @@ class DistillModule(pl.LightningModule):
         super().__init__()
         self.teacher = teacher
         self.student = student
+        self.student_neck = VAESampler(input_dim=64, latent_dim=64, out_dim=1024)  # Example dimensions
         self.lr = lr
         self.max_steps = max_steps  # Set this to the number of training steps you want
         self.add_noise = add_noise
@@ -184,6 +209,7 @@ class DistillModule(pl.LightningModule):
             target_feat = self.teacher(depth_teacher)
 
         pred_feat = self.student(depth_student)
+        pred_feat = self.student_neck(pred_feat)
 
         # Compute metrics once
         mse = F.mse_loss(pred_feat, target_feat)
@@ -214,6 +240,7 @@ class DistillModule(pl.LightningModule):
         with torch.no_grad():
             target_feat = self.teacher(depth_teacher)
             pred_feat = self.student(depth_student)
+            pred_feat = self.student_neck(pred_feat)
 
         # Compute metrics once
         mse = F.mse_loss(pred_feat, target_feat)
