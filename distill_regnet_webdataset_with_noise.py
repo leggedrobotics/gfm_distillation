@@ -103,7 +103,7 @@ class VAESampler(nn.Module):
     def forward(self, x):
         x = self.conv(x)
         x = self.mean_layers(x)
-        self.proj(x)
+        x = self.proj(x)
         return x
 
 class RegNetStudent(nn.Module):
@@ -194,10 +194,9 @@ class DistillModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         depth, _ = batch
 
-        if self.add_noise:
-            depth_teacher = depth[0] * self.max_depth
-            depth_teacher = self.depth_noise(depth_teacher[:,:1,:,:], add_noise=True)
-            depth_student = self.student_noise(depth[1] * self.max_depth, add_noise=False)
+        depth_teacher = depth[0] * self.max_depth
+        depth_teacher = self.depth_noise(depth_teacher[:,:1,:,:], add_noise=self.add_noise)
+        depth_student = self.student_noise(depth[1] * self.max_depth, add_noise=self.add_noise)
 
         # Center crop 64x64 for the student depth
         depth_teacher = torch.repeat_interleave(depth_teacher, 3, dim=1)
