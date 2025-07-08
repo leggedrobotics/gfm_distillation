@@ -1,0 +1,20 @@
+output_path: /home/patelm/gfm/submodules/rl_nav/output
+batch_size: 256
+num_workers: 8
+max_epochs: 100
+lr: 1e-3
+project: imagenet_distill
+num_gpus: 1
+log_every_n_steps: 50
+
+wandb:
+  project: distillation_imagenet
+  entity: geometric-foundational-model
+
+dataset:
+  train_path: /media/sharedaccess/Manthan_RSL_SSD/imagenet-1k/train
+  val_path: /media/sharedaccess/Manthan_RSL_SSD/imagenet-1k/val
+
+student_backbone: resnet18  # Options: resnet18, resnet34, resnet50
+teacher_model: vit_s        # Options: vit_s, vit_b, vit_l
+exp_name: Distill_dinov2_vits_to_resnet50
