@@ -121,6 +121,7 @@ class RegNetStudent(nn.Module):
         
         # Feature Pyramid Network
         self.fpn = FeaturePyramidNetwork([64, 160, 400], out_channel)
+        self.proj = nn.Conv2d(out_channel, out_dim, kernel_size=1)
 
     def forward(self, x):
         # check if depth has channel dimension
@@ -135,7 +136,7 @@ class RegNetStudent(nn.Module):
         
         out = self.fpn(out)
         
-        return out['feat1']
+        return self.proj(out['feat1'])
 
 class DistillDatasetTransform(object):
     def __init__(self):
@@ -143,9 +144,9 @@ class DistillDatasetTransform(object):
         self.transform = T.Compose([
             T.RandomResizedCrop((224, 224), scale=(0.8, 1.0)),
             T.RandomHorizontalFlip(),
-            T.RandomRotation(degrees=10),
-            T.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.95, 1.05), shear=5),
-            T.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
+            # T.RandomRotation(degrees=10),
+            # T.RandomAffine(degrees=0, translate=(0.05, 0.05), scale=(0.95, 1.05), shear=5),
+            # T.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)),
             T.ToTensor(),
         ])
         self.normalize = T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.2, 0.2, 0.2])
@@ -165,7 +166,7 @@ class DistillModule(pl.LightningModule):
         super().__init__()
         self.teacher = teacher
         self.student = student
-        self.student_neck = VAESampler(input_dim=64, latent_dim=64, out_dim=1024)  # Example dimensions
+        # self.student_neck = VAESampler(input_dim=64, latent_dim=64, out_dim=1024)  # Example dimensions
         self.lr = lr
         self.max_steps = max_steps  # Set this to the number of training steps you want
         self.add_noise = add_noise
@@ -208,7 +209,7 @@ class DistillModule(pl.LightningModule):
             target_feat = self.teacher(depth_teacher)
 
         pred_feat = self.student(depth_student)
-        pred_feat = self.student_neck(pred_feat)
+        # pred_feat = self.student_neck(pred_feat)
 
         # Compute metrics once
         mse = F.mse_loss(pred_feat, target_feat)
@@ -228,10 +229,9 @@ class DistillModule(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         depth, _ = batch
 
-        if self.add_noise:
-            depth_teacher = depth[0] * self.max_depth
-            depth_teacher = self.depth_noise(depth_teacher[:,:1,:,:], add_noise=True)
-            depth_student = self.student_noise(depth[1] * self.max_depth, add_noise=True)
+        depth_teacher = depth[0] * self.max_depth
+        depth_teacher = self.depth_noise(depth_teacher[:,:1,:,:], add_noise=self.add_noise)
+        depth_student = self.student_noise(depth[1] * self.max_depth, add_noise=self.add_noise)
 
         # Center crop 64x64 for the student depth
         depth_teacher = torch.repeat_interleave(depth_teacher, 3, dim=1)
@@ -239,7 +239,7 @@ class DistillModule(pl.LightningModule):
         with torch.no_grad():
             target_feat = self.teacher(depth_teacher)
             pred_feat = self.student(depth_student)
-            pred_feat = self.student_neck(pred_feat)
+            # pred_feat = self.student_neck(pred_feat)
 
         # Compute metrics once
         mse = F.mse_loss(pred_feat, target_feat)

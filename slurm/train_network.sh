@@ -1,7 +1,7 @@
 #!/bin/bash -l
 
 #SBATCH --job-name=distill_regnet
-#SBATCH --time=12:00:00
+#SBATCH --time=8:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
 #SBATCH --cpus-per-task=70
