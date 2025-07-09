@@ -22,7 +22,7 @@ class WebDatasetImagenet(VisionDataset):
         target_transform: Optional[Callable] = None,
         images_per_shard: int = 3000,
         shard_pattern: str = "*.tar",
-        shuffle_buffer: int = 1000,
+        shuffle_buffer: int = 256,
         resampled: bool = True,
         shardshuffle: bool = True,
         seed: int = 42,
@@ -52,7 +52,7 @@ class WebDatasetImagenet(VisionDataset):
 
         # ✅ WebDataset pipeline for JPEG + JSON
         self.dataset = (
-            wds.WebDataset(self.shard_files, resampled=resampled, nodesplitter=wds.split_by_node)
+            wds.WebDataset(self.shard_files, resampled=resampled, nodesplitter=wds.split_by_node, empty_check=False)
             .shuffle(shuffle_buffer)
             .to_tuple("jpg", "json")
             .map(self.process_sample)

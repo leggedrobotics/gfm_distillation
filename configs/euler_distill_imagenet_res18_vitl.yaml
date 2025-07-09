@@ -1,0 +1,23 @@
+output_path: /cluster/work/rsl/patelm/result/imagenet_distillation
+batch_size: 256
+num_workers: 16
+max_epochs: 100
+lr: 1e-3
+project: imagenet_distill
+num_gpus: 4
+log_every_n_steps: 50
+
+wandb:
+  project: distillation_imagenet
+  entity: geometric-foundational-model
+
+# dataset:
+#   train_path: ${oc.env:TMPDIR}/imagenet/train
+#   val_path: ${oc.env:TMPDIR}/imagenet/val
+dataset:
+  train_path: /cluster/scratch/patelm/imagenet/train
+  val_path: /cluster/scratch/patelm/imagenet/val
+
+student_backbone: resnet18  # Options: resnet18, resnet34, resnet50
+teacher_model: vit_l        # Options: vit_s, vit_b, vit_l
+exp_name: euler_vitl_to_res18

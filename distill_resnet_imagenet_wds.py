@@ -124,6 +124,7 @@ if __name__ == "__main__":
     exp_name = cfg.exp_name
     output_path = cfg.output_path
     num_gpus = getattr(cfg, 'num_gpus', 1)
+    num_nodes = getattr(cfg, 'num_nodes', 1)
     log_every_n_steps = getattr(cfg, 'log_every_n_steps', 100)
 
 
@@ -138,8 +139,8 @@ if __name__ == "__main__":
     train_loader = DataLoader(train_ds.dataset, batch_size=batch_size, num_workers=num_workers)
     val_loader = DataLoader(val_ds.dataset, batch_size=batch_size, num_workers=num_workers)
 
-    max_steps = max_epochs * (train_ds.estimated_num_samples // batch_size) // cfg.num_gpus
-    print(f"Max steps: {max_steps}, Total training samples: {train_ds.estimated_num_samples}, Batch size: {batch_size}, Num GPUs: {num_gpus}")
+    max_steps = max_epochs * (train_ds.estimated_num_samples // batch_size) // (num_gpus * num_nodes)
+    print(f"Max steps: {max_steps}, Total training samples: {train_ds.estimated_num_samples}, Batch size: {batch_size}, Num GPUs: {num_gpus}, Num Nodes: {num_nodes}")
     # 5. Logging and checkpointing
     output_dir = os.path.join(output_path, exp_name)
     os.makedirs(output_dir, exist_ok=True)
@@ -163,8 +164,8 @@ if __name__ == "__main__":
     limit_train_batches = (train_ds.estimated_num_samples // batch_size)
     limit_val_batches = (val_ds.estimated_num_samples // batch_size) 
 
-    limit_train_batches = 5000 // cfg.num_gpus
-    limit_val_batches = 196  // cfg.num_gpus
+    limit_train_batches = 5000 // (num_gpus * num_nodes)
+    limit_val_batches = 196  // (num_gpus * num_nodes)
 
     print(f"Training on {num_gpus} GPUs with batch size {batch_size}. Total train batches: {limit_train_batches}, Total val batches: {limit_val_batches}")
     # 6. Model and trainer
@@ -192,6 +193,7 @@ if __name__ == "__main__":
         accelerator="gpu",
         strategy=DDPStrategy(find_unused_parameters=True),
         devices=num_gpus,
+        num_nodes=num_nodes,
         precision="16-mixed",
         logger=wandb_logger,
         callbacks=[ckpt_cb],
