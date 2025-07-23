@@ -1,0 +1,27 @@
+exp_name: Distill_resnet18_debug_wds
+output_path: /home/patelm/gfm/submodules/rl_nav/output
+num_gpus: 1
+batch_size: 512
+max_steps: 200000
+num_workers: 4
+limit_train_batches: 200
+limit_val_batches: 20
+learning_rate: 5e-4
+out_dim: 384
+dino_out_dim: 65536
+teacher_temp: 0.07
+student_temp: 0.1
+crop_size: 224
+resnet_type: resnet50 # resnet18, resnet50
+
+wandb:
+  project: distillation
+  entity: geometric-foundational-model
+
+teacher:
+  config_path: /home/patelm/Downloads/vit_small_depth/vitl16_data_A_32GPU_distill_s16_125k_webd/config
+  ckpt_path: /home/patelm/Downloads/vit_small_depth/vitl16_data_A_32GPU_distill_s16_125k_webd/training_124999/student_ema_checkpoint.pth
+
+dataset:
+  path: /home/patelm/Downloads/gfm_datasets/omnidata
+  val_path: /home/patelm/Downloads/gfm_datasets/omnidata
