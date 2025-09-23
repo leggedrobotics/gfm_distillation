@@ -33,6 +33,9 @@ class MultiStudentDistillationModule(pl.LightningModule):
         for s in cfg["students"]:
             self.students[s["name"]] = StudentWrapper(
                 backbone_name=s["name"],
+                head_hidden_dim=s["head_hidden_dim"],
+                head_bottleneck_dim=s["head_bottleneck_dim"],
+                head_nlayers=s["head_nlayers"],
                 teacher_cfg_path=teacher_cfg["cfg_path"],
                 out_channels=s["out_channels"],
                 do_ibot=self.do_ibot,

@@ -10,6 +10,7 @@ import torch
 from models.multi_student_module import MultiStudentDistillationModule
 from data.webdataset_vision_png import WebDatasetVisionPNG
 from data.augmentations_depth import DataAugmentationDINODepthNorm
+import argparse
 
 class StepCheckpoint(pl.Callback):
     """Custom checkpointing every N steps, plus student export."""
@@ -34,7 +35,16 @@ class StepCheckpoint(pl.Callback):
                 torch.save(student.state_dict(), student_path)
 
 def main():
-    cfg = OmegaConf.load("configs/multi_student_distillation.yaml")
+
+    parser = argparse.ArgumentParser(description="Multi-Student Distillation Training")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="configs/multi_student_distillation.yaml",
+        help="Path to config file",
+    )
+    args = parser.parse_args()
+    cfg = OmegaConf.load(args.config)
 
     cfg.train.log_every = cfg.train.log_every * len(cfg.students)  # Hack to fix the log_every counting with multiple students
 

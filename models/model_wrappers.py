@@ -107,7 +107,7 @@ def build_student_backbone(backbone_name, out_channels=128):
 
 
 class StudentWrapper(nn.Module):
-    def __init__(self, backbone_name, teacher_cfg_path, out_channels=128, do_ibot=True, do_dino=True):
+    def __init__(self, backbone_name, head_hidden_dim, head_bottleneck_dim, head_nlayers, teacher_cfg_path, out_channels=128, do_ibot=True, do_dino=True):
         super().__init__()
         backbone, cls_channels = build_student_backbone(backbone_name, out_channels=out_channels)
         cfg = load_and_merge_config(teacher_cfg_path)
@@ -121,9 +121,9 @@ class StudentWrapper(nn.Module):
             DINOHead,
             in_dim=cls_channels,
             out_dim=cfg.dino.head_n_prototypes,
-            hidden_dim=cfg.dino.head_hidden_dim,
-            bottleneck_dim=cfg.dino.head_bottleneck_dim,
-            nlayers=cfg.dino.head_nlayers,
+            hidden_dim=head_hidden_dim,
+            bottleneck_dim=head_bottleneck_dim,
+            nlayers=head_nlayers,
         )
 
         self.student = nn.ModuleDict({
@@ -137,9 +137,9 @@ class StudentWrapper(nn.Module):
                 DINOHead,
                 in_dim=out_channels,
                 out_dim=cfg.ibot.head_n_prototypes,
-                hidden_dim=cfg.ibot.head_hidden_dim,
-                bottleneck_dim=cfg.ibot.head_bottleneck_dim,
-                nlayers=cfg.ibot.head_nlayers,
+                hidden_dim=head_hidden_dim,
+                bottleneck_dim=head_bottleneck_dim,
+                nlayers=head_nlayers,
             )
             self.student["ibot_head"] = ibot_head()
 
