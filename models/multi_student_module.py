@@ -6,7 +6,7 @@ from dinov2.configs import load_and_merge_config
 from models.model_wrappers import DinoTeacher, StudentWrapper
 from utils.depth_noise import DepthNoise
 from torch.optim.lr_scheduler import OneCycleLR
-
+from torch.nn.utils import clip_grad_norm_
 
 class MultiStudentDistillationModule(pl.LightningModule):
     def __init__(self, cfg):
@@ -67,6 +67,8 @@ class MultiStudentDistillationModule(pl.LightningModule):
 
         self.visualize = False
         self.automatic_optimization = False
+
+        self.grad_clip_val = cfg.train.gradient_clip_val
     
     # def training_step(self, batch, batch_idx):
     #     images, _ = batch
@@ -170,6 +172,7 @@ class MultiStudentDistillationModule(pl.LightningModule):
 
             # backward + step
             self.manual_backward(loss)
+            clip_grad_norm_(student.parameters(), max_norm=self.grad_clip_val)  # Gradient clipping
             opt.step()
             sched.step()
 
