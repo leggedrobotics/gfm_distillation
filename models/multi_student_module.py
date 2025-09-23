@@ -18,10 +18,12 @@ class MultiStudentDistillationModule(pl.LightningModule):
         teacher_cfg = cfg["teacher"]
         teacher_cfg_dino = load_and_merge_config(teacher_cfg["cfg_path"])
 
+        self.do_ibot = cfg.loss.do_ibot
+    
         self.teacher = DinoTeacher(
             config_path=teacher_cfg["cfg_path"],
             ckpt_path=teacher_cfg["ckpt_path"],
-            do_ibot=True,
+            do_ibot=self.do_ibot,
             do_dino=True,
         )
         self.teacher_temp = teacher_cfg["temperature"]
@@ -33,7 +35,7 @@ class MultiStudentDistillationModule(pl.LightningModule):
                 backbone_name=s["name"],
                 teacher_cfg_path=teacher_cfg["cfg_path"],
                 out_channels=s["out_channels"],
-                do_ibot=True,
+                do_ibot=self.do_ibot,
                 do_dino=True,
             )
 
@@ -46,10 +48,15 @@ class MultiStudentDistillationModule(pl.LightningModule):
             out_dim=dino_out_dim,
             student_temp=loss_cfg["dino_student_temp"],
         )
-        self.ibot_patch_loss = iBOTPatchLoss(
-            patch_out_dim=ibot_out_dim,
-            student_temp=loss_cfg["ibot_student_temp"],
-        )
+
+        if self.do_ibot:
+            self.ibot_patch_loss = iBOTPatchLoss(
+                patch_out_dim=ibot_out_dim,
+                student_temp=loss_cfg["ibot_student_temp"],
+            )
+            print(f"Using iBOT patch loss")
+        else:
+            print(f"Not using iBOT patch loss")
 
         train_cfg = cfg["train"]
         self.lr = train_cfg["lr"]
@@ -57,6 +64,56 @@ class MultiStudentDistillationModule(pl.LightningModule):
 
         self.visualize = False
         self.automatic_optimization = False
+    
+    # def training_step(self, batch, batch_idx):
+    #     images, _ = batch
+
+    #     # Teacher forward once per batch
+    #     teacher_out = self.teacher(images["teacher"])
+    #     teacher_cls_centered = self.dino_loss.softmax_center_teacher(
+    #         teacher_out["cls_token"], self.teacher_temp
+    #     )
+    #     teacher_patches_centered = self.ibot_patch_loss.softmax_center_teacher(
+    #         teacher_out["spatial_tokens"], self.teacher_temp
+    #     )
+
+    #     # Update centers once per batch
+    #     self.dino_loss.update_center(teacher_out["cls_token"])
+    #     self.ibot_patch_loss.update_center(teacher_out["spatial_tokens"])
+
+    #     # Optimizers
+    #     optimizers = self.optimizers()
+    #     schedulers = self.lr_schedulers()
+
+    #     total_loss = 0.0
+    #     # One independent step per student
+    #     for i, (name, student) in enumerate(self.students.items()):
+
+    #         opt = optimizers[i]
+    #         sched = schedulers[i]
+
+    #         opt.zero_grad()
+    #         student_out = student(images["student"])
+
+    #         loss_cls = self.dino_loss([student_out["cls_token"]], [teacher_cls_centered])
+    #         loss_patches = self.ibot_patch_loss(student_out["spatial_tokens"], teacher_patches_centered)
+    #         loss = loss_cls + loss_patches
+
+    #         # Backward + step only for this student
+    #         self.manual_backward(loss)
+    #         opt.step()
+    #         sched.step()
+
+    #         # Logging
+    #         self.log(f"train/{name}/cls", loss_cls, prog_bar=False, sync_dist=True)
+    #         self.log(f"train/{name}/patches", loss_patches, prog_bar=False, sync_dist=True)
+    #         self.log(f"train/{name}/total", loss, prog_bar=True, sync_dist=True)
+
+    #         total_loss += loss
+
+    #     # Optional: return average for monitoring
+
+    #     return total_loss / len(self.students)
     
     def training_step(self, batch, batch_idx):
         images, _ = batch
@@ -66,13 +123,13 @@ class MultiStudentDistillationModule(pl.LightningModule):
         teacher_cls_centered = self.dino_loss.softmax_center_teacher(
             teacher_out["cls_token"], self.teacher_temp
         )
-        teacher_patches_centered = self.ibot_patch_loss.softmax_center_teacher(
-            teacher_out["spatial_tokens"], self.teacher_temp
-        )
-
-        # Update centers once per batch
         self.dino_loss.update_center(teacher_out["cls_token"])
-        self.ibot_patch_loss.update_center(teacher_out["spatial_tokens"])
+
+        if self.do_ibot:
+            teacher_patches_centered = self.ibot_patch_loss.softmax_center_teacher(
+                teacher_out["spatial_tokens"], self.teacher_temp
+            )
+            self.ibot_patch_loss.update_center(teacher_out["spatial_tokens"])
 
         # Optimizers
         optimizers = self.optimizers()
@@ -89,25 +146,67 @@ class MultiStudentDistillationModule(pl.LightningModule):
             student_out = student(images["student"])
 
             loss_cls = self.dino_loss([student_out["cls_token"]], [teacher_cls_centered])
-            loss_patches = self.ibot_patch_loss(student_out["spatial_tokens"], teacher_patches_centered)
-            loss = loss_cls + loss_patches
 
-            # Backward + step only for this student
+            if self.do_ibot:
+                loss_patches = self.ibot_patch_loss(student_out["spatial_tokens"], teacher_patches_centered)
+                loss = loss_cls + loss_patches
+                self.log(f"train/{name}/patches", loss_patches, prog_bar=False, sync_dist=True)
+            else:
+                loss = loss_cls
+            # log
+            self.log(f"train/{name}/loss", loss, prog_bar=True, sync_dist=True)
+            self.log(f"train/{name}/cls", loss_cls, prog_bar=False, sync_dist=True)
+            
+
+            with torch.no_grad():
+                teacher_pred = torch.argmax(teacher_out["cls_token"], dim=-1)
+                student_pred = torch.argmax(student_out["cls_token"], dim=-1)
+                accuracy = (teacher_pred == student_pred).float().mean()
+        
+            self.log(f"train/{name}/accuracy", accuracy, prog_bar=False, sync_dist=True)
+
+            # backward + step
             self.manual_backward(loss)
             opt.step()
             sched.step()
 
-            # Logging
-            self.log(f"train/{name}/cls", loss_cls, prog_bar=False, sync_dist=True)
-            self.log(f"train/{name}/patches", loss_patches, prog_bar=False, sync_dist=True)
-            self.log(f"train/{name}/total", loss, prog_bar=True, sync_dist=True)
+            # log LR
+            current_lr = opt.param_groups[0]["lr"]
+            self.log(f"lr/{name}", current_lr, prog_bar=False, sync_dist=True)
 
-            total_loss += loss
+            total_loss += loss.detach()
 
-        # Optional: return average for monitoring
+        # log avg
+        total_loss = total_loss / len(self.students)
+        self.log("train/loss", total_loss, prog_bar=True, sync_dist=True)
 
-        return total_loss / len(self.students)
+        return total_loss
 
+    def configure_optimizers(self):
+        optimizers, schedulers = [], []
+        max_steps = self.cfg.train.max_steps
+        lr = self.cfg.train.lr
+        wd = self.cfg.train.weight_decay
+
+        for name, student in self.students.items():
+            opt = torch.optim.AdamW(student.parameters(), lr=lr, weight_decay=wd)
+            sched = {
+                "scheduler": OneCycleLR(
+                    opt,
+                    max_lr=lr,
+                    total_steps=max_steps,
+                    pct_start=0.1,   # 10% warmup
+                    anneal_strategy="cos",
+                    cycle_momentum=False,
+                ),
+                # "interval": "step",  # step once per training_step
+                # "frequency": 1,
+            }
+            optimizers.append(opt)
+            schedulers.append(sched)
+
+        return optimizers, schedulers
+    
     # def forward(self, x):
     #     teacher_out = self.teacher(x["teacher"])
     #     student_outs = {name: model(x["student"]) for name, model in self.students.items()}
@@ -177,26 +276,26 @@ class MultiStudentDistillationModule(pl.LightningModule):
     #     optimizer = torch.optim.AdamW(params, lr=self.lr, weight_decay=self.weight_decay)
     #     return optimizer
 
-    def configure_optimizers(self):
-        optimizers, schedulers = [], []
+    # def configure_optimizers(self):
+    #     optimizers, schedulers = [], []
 
-        total_steps = self.cfg.train.max_steps  # fixed number of steps
+    #     total_steps = self.cfg.train.max_steps  # fixed number of steps
 
-        for name, student in self.students.items():
-            opt = torch.optim.AdamW(
-                student.parameters(),
-                lr=self.lr,
-                weight_decay=self.weight_decay,
-            )
-            sched = OneCycleLR(
-                opt,
-                max_lr=self.lr,
-                total_steps=total_steps,
-                pct_start=0.1,   # 10% warmup
-                anneal_strategy="cos",
-                cycle_momentum=False,
-            )
-            optimizers.append(opt)
-            schedulers.append(sched)
+    #     for name, student in self.students.items():
+    #         opt = torch.optim.AdamW(
+    #             student.parameters(),
+    #             lr=self.lr,
+    #             weight_decay=self.weight_decay,
+    #         )
+    #         sched = OneCycleLR(
+    #             opt,
+    #             max_lr=self.lr,
+    #             total_steps=total_steps,
+    #             pct_start=0.1,   # 10% warmup
+    #             anneal_strategy="cos",
+    #             cycle_momentum=False,
+    #         )
+    #         optimizers.append(opt)
+    #         schedulers.append(sched)
 
-        return optimizers, schedulers
+    #     return optimizers, schedulers

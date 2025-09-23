@@ -11,16 +11,16 @@ from models.multi_student_module import MultiStudentDistillationModule
 from data.webdataset_vision_png import WebDatasetVisionPNG
 from data.augmentations_depth import DataAugmentationDINODepthNorm
 
-
 class StepCheckpoint(pl.Callback):
     """Custom checkpointing every N steps, plus student export."""
     def __init__(self, cfg):
         self.checkpoint_every = cfg.train.checkpoint_every
         self.export_students_every = cfg.train.export_students_every
         self.output_dir = os.path.join(cfg.experiment.output_dir, cfg.experiment.name)
+        self.num_students = len(cfg.students)
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        global_step = trainer.global_step
+        global_step = trainer.global_step // self.num_students  # Hack to fix the global step counting with multiple students
 
         # Regular Lightning checkpoint
         if global_step > 0 and global_step % self.checkpoint_every == 0:
@@ -35,6 +35,10 @@ class StepCheckpoint(pl.Callback):
 
 def main():
     cfg = OmegaConf.load("configs/multi_student_distillation.yaml")
+
+    cfg.train.log_every = cfg.train.log_every * len(cfg.students)  # Hack to fix the log_every counting with multiple students
+
+    num_students = len(cfg.students)
 
     output_dir = os.path.join(cfg.experiment.output_dir, cfg.experiment.name)
     os.makedirs(output_dir, exist_ok=True)
@@ -73,7 +77,7 @@ def main():
         num_nodes=cfg.trainer.num_nodes,
         strategy=DDPStrategy(find_unused_parameters=True),
         precision=cfg.trainer.precision,
-        max_steps=cfg.train.max_steps,
+        max_steps=cfg.train.max_steps * num_students,  # Hack to Fix the num_steps counting with multiple students
         log_every_n_steps=cfg.train.log_every,
         logger=wandb_logger,
         callbacks=[StepCheckpoint(cfg)],
