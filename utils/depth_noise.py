@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import numpy as np
 
 class DepthNoise(torch.nn.Module):
     def __init__(self, 
@@ -129,3 +130,79 @@ class DepthNoise(torch.nn.Module):
             depth = torch.clamp(depth, min=0.0, max=self.max_depth) # 0 means invalid depth, e.g. nan
 
         return depth
+
+import torch
+import torch.nn.functional as F
+
+class AdaptiveDepthNoise(torch.nn.Module):
+    """
+    Depth noise wrapper that adapts parameters (focal_length, baseline)
+    based on the resolution (H, W) of the input depth map.
+    """
+
+    def __init__(self,
+                 min_depth=0.01,
+                 max_depth=100.0,
+                 filter_size=3,
+                 inlier_thred_range=(0.01, 0.05),
+                 prob_range=(0.5, 0.8),
+                 invalid_disp=1e7):
+        super().__init__()
+        self.min_depth = min_depth
+        self.max_depth = max_depth
+        self.filter_size = filter_size
+        self.inlier_thred_range = inlier_thred_range
+        self.prob_range = prob_range
+        self.invalid_disp = invalid_disp
+
+    def _make_depth_noise(self, H, W):
+        """
+        Construct a DepthNoise instance for this resolution.
+        You can replace this heuristic with dataset-specific intrinsics if available.
+        """
+        # Heuristic focal length (fx ≈ 1.2 * max(H, W))
+        focal_length = 1.2 * max(H, W)
+
+        # Simple baseline scaling (smaller FOV cams usually have larger baseline)
+        baseline = 0.05 if W < 500 else 0.1
+
+        return DepthNoise(
+            focal_length=focal_length,
+            baseline=baseline,
+            min_depth=self.min_depth,
+            max_depth=self.max_depth,
+            filter_size=self.filter_size,
+            inlier_thred_range=self.inlier_thred_range,
+            prob_range=self.prob_range,
+            invalid_disp=self.invalid_disp
+        )
+
+    def forward(self, depth, add_noise=True, return_numpy=True):
+        """
+        depth: can be numpy array (H, W) or torch tensor of shape (B, 1, H, W), (1, H, W), or (H, W).
+        """
+
+        # Convert numpy to torch tensor
+        if isinstance(depth, np.ndarray):
+            depth = torch.from_numpy(depth).float()
+
+        # Ensure shape (B, 1, H, W)
+        if depth.ndim == 2:         # (H, W)
+            depth = depth.unsqueeze(0).unsqueeze(0)
+        elif depth.ndim == 3:       # (1, H, W) or (C, H, W)
+            depth = depth.unsqueeze(0) if depth.shape[0] != 1 else depth.unsqueeze(0)
+        elif depth.ndim == 4:
+            pass  # already (B, 1, H, W)
+        else:
+            raise ValueError(f"Unsupported depth shape: {depth.shape}")
+
+        B, C, H, W = depth.shape
+        noise_model = self._make_depth_noise(H, W)
+
+        depth_out = noise_model(depth, add_noise=add_noise)
+
+        # Return numpy if needed
+        if return_numpy:
+            depth_out = depth_out.squeeze(0).squeeze(0).cpu().numpy()
+
+        return depth_out

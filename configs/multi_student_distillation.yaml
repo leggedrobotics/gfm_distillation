@@ -1,0 +1,49 @@
+# Teacher setup
+teacher:
+  cfg_path: "/media/sharedaccess/Manthan_RSL_SSD/clariden_models/vitl14_data_all_96GPU_3_channel_563k_webd/config"
+  ckpt_path: "/media/sharedaccess/Manthan_RSL_SSD/clariden_models/vitl14_data_all_96GPU_3_channel_563k_webd/teacher_checkpoint.pth"
+  temperature: 0.04
+
+# Students (list of dicts with name + output channels)
+students:
+  - name: "efficientnet_b4"
+    out_channels: 128
+  - name: "regnet_y_800mf"
+    out_channels: 128
+  - name: "resnet50"
+    out_channels: 128
+
+# Loss hyperparams
+loss:
+  dino_student_temp: 0.1
+  ibot_student_temp: 0.1
+
+experiment:
+  name: "distill_regnet_effnet"
+  output_dir: "/media/sharedaccess/Manthan_RSL_SSD/debug_distillation"
+
+# Dataset / dataloader
+data:
+  root: "/media/sharedaccess/Manthan_RSL_SSD/test_webdataset"
+  batch_size: 8
+  num_workers: 8
+
+# Optimizer / training
+train:
+  lr: 1e-4
+  weight_decay: 1e-4
+  max_steps: 625000
+  checkpoint_every: 300  # save PL ckpt
+  export_students_every: 1250 # save student models separately
+  log_every: 50
+
+# Trainer setup
+trainer:
+  accelerator: "gpu"
+  devices: 1          # per node
+  num_nodes: 1        # multi-node
+  precision: "16-mixed"
+
+wandb:
+  project: "multi-student-distillation"
+  entity: "geometric-foundational-model"
