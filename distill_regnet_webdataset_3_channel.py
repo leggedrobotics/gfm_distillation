@@ -273,6 +273,7 @@ if __name__ == "__main__":
     ckpt_path = cfg.teacher.ckpt_path
     dataset_path = cfg.dataset.path
     val_dataset_path = cfg.dataset.val_path
+    dataset_list = cfg.dataset.get('dataset_list', None)
 
     # Noise params
     add_noise = cfg.noise.add_noise
@@ -311,11 +312,11 @@ if __name__ == "__main__":
     teacher = DinoTeacher(model_conf, ckpt_path)
     student = RegNetStudent(in_channel=3, out_channel=64, out_dim=1024)
     dataset_transform = DistillDatasetTransform()
-    dataset_distill = WebDatasetVisionPNG(dataset_path, transform=dataset_transform, target_transform=None, noise_prob=0.5)
+    dataset_distill = WebDatasetVisionPNG(dataset_path, transform=dataset_transform, target_transform=None, noise_prob=0.5, dataset_list_file=dataset_list)
     dataloader = DataLoader(dataset_distill.dataset, batch_size=batch_size, num_workers=NUM_WORKERS)
 
     # Validation dataset and loader
-    val_dataset_distill = WebDatasetVisionPNG(val_dataset_path, transform=dataset_transform, target_transform=None, noise_prob=0.5)
+    val_dataset_distill = WebDatasetVisionPNG(val_dataset_path, transform=dataset_transform, target_transform=None, noise_prob=0.5, dataset_list_file=dataset_list)
     val_dataloader = DataLoader(val_dataset_distill.dataset, batch_size=batch_size, num_workers=NUM_WORKERS)
 
     model = DistillModule(
