@@ -1,0 +1,32 @@
+exp_name: Distill_regnet_lr1e-4_data_all_mse_64_3_channel_debug
+output_path: /home/patelm/gfm/submodules/rl_nav/output
+num_gpus: 1
+batch_size: 64
+max_steps: 100000
+num_workers: 8
+limit_train_batches: 2000
+limit_val_batches: 200
+learning_rate: 1e-4
+
+noise:
+  add_noise: true
+  min_depth: 0.25
+  max_depth: 10.0
+  teacher:
+    focal_length: 120.0
+    baseline: 0.12
+  student:
+    focal_length: 25.0
+    baseline: 0.12
+
+wandb:
+  project: distillation
+  entity: geometric-foundational-model
+
+teacher:
+  config_path: /media/sharedaccess/Manthan_RSL_SSD/clariden_models/vitl14_data_all_96GPU_3_channel_563k_webd/config
+  ckpt_path: /media/sharedaccess/Manthan_RSL_SSD/clariden_models/vitl14_data_all_96GPU_3_channel_563k_webd/teacher_checkpoint.pth
+
+dataset:
+  path: /media/sharedaccess/Manthan_RSL_SSD/test_webdataset
+  val_path: /media/sharedaccess/Manthan_RSL_SSD/test_webdataset
