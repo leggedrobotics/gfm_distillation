@@ -136,7 +136,7 @@ class WebDatasetVision(VisionDataset):
 def not_none(x):
     return x is not None
 
-class WebDatasetVisionPNG(WebDatasetVision):
+class WebDatasetVisionPNGMinMax(WebDatasetVision):
     def __init__(
         self,
         root: str,
@@ -251,30 +251,15 @@ class WebDatasetVisionPNG(WebDatasetVision):
             if self.noise_prob > 0:
                 if is_metric_depth and np.random.rand() < self.noise_prob:
                     metric_depth = self.noise_augment(metric_depth, add_noise=True)
-            
-            # Channel 1: Metric depth normalized (100 is max depth)
-            log_depth = np.log1p(metric_depth)  # ln(1 + depth)
-            channel_1 = log_depth / np.log1p(max_depth_ch0)  # Normalize by ln(101)
 
-            # Channel 2:  Metric depth normalized (10 is max depth)
-            channel_2 = np.clip(log_depth / np.log(max_depth_ch1), 0, 1)  
-            
-            # Channel 3: Per-image min-max normalized
-            min_log_depth = np.log1p(metric_depth.min())
-            max_log_depth = np.log1p(metric_depth.max())
-            
-            # Avoid division by zero
-            if max_log_depth > min_log_depth:
-                channel_3 = (log_depth - min_log_depth) / (max_log_depth - min_log_depth)
-            else:
-                channel_3 = np.zeros_like(log_depth)
-            
-            # Combine channels - shape will be (H, W, 2)
-            three_channel_depth = np.stack([channel_1, channel_2, channel_3], axis=-1)
-            
+            channel_1 = (metric_depth - np.min(metric_depth)) / (np.max(metric_depth) - np.min(metric_depth))  # Min-max normalized depth
+
+            # Stack to 3-channel image
+            three_channel_depth = np.stack([channel_1, channel_1, channel_1], axis=-1)
+
             return three_channel_depth  # Return numpy array
             
         except Exception as e:
             print(f"⚠️ PNG decode failed: {e} — Using blank 3-channel image.")
             # Return a blank 3-channel depth image
-            return np.zeros((224, 224, 3), dtype=np.float32)
+            return np.zeros((256, 256, 3), dtype=np.float32)
