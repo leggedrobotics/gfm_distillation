@@ -136,6 +136,149 @@ class WebDatasetVision(VisionDataset):
 def not_none(x):
     return x is not None
 
+class WebDatasetVisionPNG(WebDatasetVision):
+    def __init__(
+        self,
+        root: str,
+        transforms: Optional[Callable] = None,
+        transform: Optional[Callable] = None,
+        target_transform: Optional[Callable] = None,
+        images_per_shard=3200,
+        shard_pattern: str = "*.tar",
+        shuffle_buffer: int = 1000,
+        dataset_list_file: Optional[str] = None,  # New parameter
+        shard_files: Optional[List[str]] = None,  # Allow direct shard file input
+        noise_prob = 0.0,  # Probability of adding depth noise
+    ):
+        super().__init__(
+            root, transforms, transform, target_transform, 
+            images_per_shard, shard_pattern, shuffle_buffer, dataset_list_file, shard_files
+        )
+
+        self.dataset = (
+            wds.WebDataset(self.shard_files, resampled=True, 
+                            nodesplitter=wds.split_by_node, shardshuffle=True)
+            .shuffle(shuffle_buffer)
+            .decode()
+            .map(custom_selector)
+            .select(not_none)
+            .map(self.process_sample)
+        )
+
+        self.noise_augment = AdaptiveDepthNoise()
+        self.noise_prob = noise_prob
+
+
+    def process_sample(self, sample):
+        """Process sample from flexible selector."""
+        png_data, json_data = sample
+        
+        metadata = json_data
+        try:
+            target = metadata["class_name"]
+        except:
+            # target = "dummy_text"
+            target = metadata.get("dataset", "sa-1b")
+
+        # Decode to 2-channel depth image
+        image = self.decode_png_three_channel(png_data, metadata)
+
+        if self.transforms is not None:
+            image, target = self.transforms(image, target)
+
+        return image, target
+    
+    def decode_png_three_channel(self, png_data, metadata, depth_multiplier=None, max_depth_ch0=100.0, max_depth_ch1=10.0):
+        """
+        Decode PNG using cv2 and return 2-channel depth image:
+        - Channel 1: Metric depth normalized as ln(1 + depth) / ln(101)
+        - Channel 2: Per-image min-max normalized as (ln(1 + depth) - ln(1 + min_depth)) / (ln(1 + max_depth) - ln(1 + min_depth))
+        """
+        is_metric_depth = False
+        try:
+            # Decode using cv2
+            img_array = np.frombuffer(png_data, np.uint8)
+            img = cv2.imdecode(img_array, cv2.IMREAD_UNCHANGED)
+            
+            if img is None:
+                raise ValueError("Failed to decode PNG with cv2")
+            
+            img_np = img.astype(np.float32)
+
+
+            dataset = metadata.get("dataset", "Unknown")
+
+            # Get depth multiplier from metadata if not provided
+            if depth_multiplier is None:
+                depth_multiplier = metadata.get("depth_multiplier", 1.0)
+                depth_resolution = metadata.get("depth_resolution", 1.0)
+
+                # Special case for somne dataset where the keyword is "depth_resolution" instead of "depth_multiplier"
+                if depth_resolution != 1.0:
+                    depth_multiplier = depth_resolution
+                
+                # Special case for MetaGraspNetSyn
+                if dataset == "MetaGraspNetSyn":
+                    depth_multiplier = depth_multiplier / 100.0
+
+            # Handle different data types
+            if img.dtype == np.uint8:
+                # This is inverse depth data - need to invert it first
+                if len(img_np.shape) == 2:
+                    # Normalize to [0, 1]
+                    img_np = (img_np - img_np.min()) / (img_np.max() - img_np.min() + 1e-8)
+                    metric_depth = max_depth_ch1 * np.exp(-5.0 * img_np)  # Exponential decay
+
+                else:
+                    raise ValueError(f"Unsupported 8-bit image shape: {img_np.shape}")
+            
+            elif img.dtype == np.uint16:
+                # This has metric depth information
+                if dataset == "hm3d" or dataset == "taskonomy":
+                    img_np[img_np >= 65530] = 0 # Also change 65535 to 0 since it is not a valid depth
+                img_np[np.isnan(img_np)] = 0
+                metric_depth = img_np / depth_multiplier
+                metric_depth[np.isnan(metric_depth)] = 0
+                metric_depth = np.clip(metric_depth, 0, max_depth_ch0)
+
+                is_metric_depth = True
+            
+            else:
+                raise ValueError(f"Unsupported PNG dtype: {img.dtype}")
+            
+            # Add noise to Metric Depth
+            if self.noise_prob > 0:
+                if is_metric_depth and np.random.rand() < self.noise_prob:
+                    metric_depth = self.noise_augment(metric_depth, add_noise=True)
+            
+            # Channel 1: Metric depth normalized (100 is max depth)
+            log_depth = np.log1p(metric_depth)  # ln(1 + depth)
+            channel_1 = log_depth / np.log1p(max_depth_ch0)  # Normalize by ln(101)
+
+            # Channel 2:  Metric depth normalized (10 is max depth)
+            channel_2 = np.clip(log_depth / np.log(max_depth_ch1), 0, 1)  
+            
+            # Channel 3: Per-image min-max normalized
+            min_log_depth = np.log1p(metric_depth.min())
+            max_log_depth = np.log1p(metric_depth.max())
+            
+            # Avoid division by zero
+            if max_log_depth > min_log_depth:
+                channel_3 = (log_depth - min_log_depth) / (max_log_depth - min_log_depth)
+            else:
+                channel_3 = np.zeros_like(log_depth)
+            
+            # Combine channels - shape will be (H, W, 2)
+            three_channel_depth = np.stack([channel_1, channel_2, channel_3], axis=-1)
+            
+            return three_channel_depth  # Return numpy array
+            
+        except Exception as e:
+            print(f"⚠️ PNG decode failed: {e} — Using blank 3-channel image.")
+            # Return a blank 3-channel depth image
+            return np.zeros((224, 224, 3), dtype=np.float32)
+        
+
 class WebDatasetVisionPNGMinMax(WebDatasetVision):
     def __init__(
         self,
@@ -165,9 +308,8 @@ class WebDatasetVisionPNGMinMax(WebDatasetVision):
             .map(self.process_sample)
         )
 
-        if noise_prob > 0:
-            self.noise_augment = AdaptiveDepthNoise()
-            self.noise_prob = noise_prob
+        self.noise_augment = AdaptiveDepthNoise()
+        self.noise_prob = noise_prob
 
 
     def process_sample(self, sample):
